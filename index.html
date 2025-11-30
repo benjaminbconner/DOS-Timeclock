@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DOS Timeclock</title>
+<style>
+  :root {
+    --bg: #000000;
+    --fg: #00ff66; /* phosphor green */
+    --dim: #00aa44;
+    --accent: #ffffff;
+    --error: #ff3344;
+    --warning: #ffcc00;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "IBMPlexMono", Consolas, Monaco, monospace;
+    margin: 0;
+  }
+
+  .screen {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .panel {
+    border: 2px solid var(--fg);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  h1, h2, h3 {
+    margin: 0 0 8px 0;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .banner {
+    border: 2px double var(--fg);
+    padding: 12px;
+    margin-bottom: 16px;
+  }
+
+  .row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--dim);
+  }
+
+  input, select, button, textarea {
+    background: #001b00;
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 14px;
+    outline: none;
+  }
+
+  input::placeholder {
+    color: #007a3d;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button.primary {
+    background: #002e00;
+    border-color: var(--fg);
+  }
+
+  .prompt {
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .log {
+    background: #001000;
+    padding: 12px;
+    border: 1px dashed var(--dim);
+    min-height: 80px;
+    white-space: pre-wrap;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+  }
+  .table th, .table td {
+    border: 1px solid var(--fg);
+    padding: 6px 8px;
+    text-align: left;
+  }
+  .muted { color: var(--dim); }
+  .error { color: var(--error); }
+  .warn { color: var(--warning); }
+
+  .footer {
+    margin-top: 20px;
+    color: var(--dim);
+    font-size: 12px;
+  }
+
+  .split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 800px) {
+    .split { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="screen">
+    <div class="banner">
+      <h1>DOS Timeclock v1.0</h1>
+      <div class="muted">SYSTEM READY. TYPE YOUR NAME AND PIN TO CLOCK IN/OUT.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Timeclock</h2>
+      <div class="row">
+        <div style="flex: 1 1 220px;">
+          <label for="empName">Employee name</label>
+          <input id="empName" type="text" placeholder="e.g., Jane Doe" />
+        </div>
+        <div style="flex: 1 1 140px;">
+          <label for="empPin">PIN</label>
+          <input id="empPin" type="password" placeholder="4-6 digits" />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="clockBtn" class="primary">Clock In / Out</button>
+        </div>
+      </div>
+      <div class="log" id="logArea"></div>
+    </div>
+
+    <div class="split">
+      <div class="panel">
+        <h3>Status</h3>
+        <table class="table" id="statusTable">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>State</th>
+              <th>Last action</th>
+              <th>Today hours</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h3>Admin</h3>
+        <div class="row">
+          <div style="flex: 1 1 220px;">
+            <label for="newEmp">Add employee</label>
+            <input id="newEmp" type="text" placeholder="Full name" />
+          </div>
+          <div style="flex: 1 1 140px;">
+            <label for="newPin">PIN</label>
+            <input id="newPin" type="text" placeholder="4-6 digits" />
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button id="addEmpBtn">Add</button>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 12px;">
+          <div>
+            <button id="exportBtn">Export CSV</button>
+          </div>
+          <div>
+            <button id="resetDayBtn">Reset today</button>
+          </div>
+          <div>
+            <button id="clearAllBtn" class="warn">Clear all data</button>
+          </div>
+        </div>
+
+        <div class="muted" style="margin-top: 10px;">
+          Admin hint: use strong, unique PINs. This demo stores data locally in your browser.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Events today</h3>
+      <table class="table" id="eventsTable">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Employee</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="footer">
+      © DOS Timeclock. Data saved in this browser via localStorage. For multi-user or secure deployments, add a server.
+    </div>
+  </div>
+
+<script>
+(function(){
+  const STORAGE_KEY = "dos_timeclock_v1";
+  const state = loadState();
+
+  // Utilities
+  function nowISO(){ return new Date().toISOString(); }
+  function todayKey(){ const d = new Date(); return d.toISOString().slice(0,10); } // YYYY-MM-DD
+  function fmtTime(iso){
+    const d = new Date(iso);
+    return d.toLocaleString();
+  }
+  function saveState(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  function loadState(){
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {
+      employees: [], // {name, pin}
+      events: {},    // {YYYY-MM-DD: [{name, action:'IN'|'OUT', timeISO}]}
+    };
+    try { return JSON.parse(raw); } catch(e){
+      return { employees: [], events: {} };
+    }
+  }
+
+  function getTodayEvents(){
+    const k = todayKey();
+    return state.events[k] || [];
+  }
+  function pushEvent(ev){
+    const k = todayKey();
+    if (!state.events[k]) state.events[k] = [];
+    state.events[k].push(ev);
+    saveState();
+  }
+
+  function hoursTodayFor(name){
+    const evs = getTodayEvents().filter(e => e.name === name);
+    let totalMs = 0;
+    let lastIn = null;
+    for (const e of evs){
+      if (e.action === "IN") lastIn = new Date(e.timeISO);
+      if (e.action === "OUT" && lastIn){
+        totalMs += (new Date(e.timeISO) - lastIn);
+        lastIn = null;
+      }
+    }
+    if (lastIn){ // still clocked in
+      totalMs += (new Date() - lastIn);
+    }
+    return (totalMs / 3600000); // hours
+  }
+
+  function isClockedIn(name){
+    const evs = getTodayEvents().filter(e => e.name === name);
+    if (evs.length === 0) return false;
+    // If last event is IN, they're in; if OUT, they're out
+    return evs[evs.length - 1].action === "IN";
+  }
+
+  function lastActionTime(name){
+    const evs = getTodayEvents().filter(e => e.name === name);
+    if (evs.length === 0) return null;
+    return evs[evs.length - 1].timeISO;
+  }
+
+  // DOM refs
+  const empName = document.getElementById("empName");
+  const empPin  = document.getElementById("empPin");
+  const clockBtn= document.getElementById("clockBtn");
+  const logArea = document.getElementById("logArea");
+  const statusTableBody = document.querySelector("#statusTable tbody");
+  const eventsTableBody = document.querySelector("#eventsTable tbody");
+  const addEmpBtn = document.getElementById("addEmpBtn");
+  const newEmp = document.getElementById("newEmp");
+  const newPin = document.getElementById("newPin");
+  const exportBtn = document.getElementById("exportBtn");
+  const resetDayBtn = document.getElementById("resetDayBtn");
+  const clearAllBtn = document.getElementById("clearAllBtn");
+
+  // Initial render
+  render();
+
+  // Handlers
+  clockBtn.addEventListener("click", () => {
+    const name = empName.value.trim();
+    const pin  = empPin.value.trim();
+    if (!name || !pin) return log("ERROR: NAME AND PIN REQUIRED.", true);
+
+    const emp = state.employees.find(e => e.name.toLowerCase() === name.toLowerCase());
+    if (!emp) return log("ERROR: EMPLOYEE NOT FOUND.", true);
+    if (String(emp.pin) !== String(pin)) return log("ERROR: INVALID PIN.", true);
+
+    const action = isClockedIn(emp.name) ? "OUT" : "IN";
+    pushEvent({ name: emp.name, action, timeISO: nowISO() });
+    log(`OK: ${emp.name} CLOCKED ${action} @ ${fmtTime(nowISO())}`);
+    empPin.value = "";
+    render();
+  });
+
+  addEmpBtn.addEventListener("click", () => {
+    const name = newEmp.value.trim();
+    const pin  = newPin.value.trim();
+    if (!name || !pin) return log("ERROR: NAME AND PIN REQUIRED TO ADD EMPLOYEE.", true);
+    if (state.employees.some(e => e.name.toLowerCase() === name.toLowerCase())){
+      return log("ERROR: EMPLOYEE ALREADY EXISTS.", true);
+    }
+    if (!/^[0-9]{4,6}$/.test(pin)){
+      return log("ERROR: PIN MUST BE 4-6 DIGITS.", true);
+    }
+    state.employees.push({ name, pin });
+    saveState();
+    newEmp.value = "";
+    newPin.value = "";
+    log(`OK: EMPLOYEE ADDED: ${name}`);
+    render();
+  });
+
+  exportBtn.addEventListener("click", () => {
+    const k = todayKey();
+    const evs = getTodayEvents();
+    const rows = [["date","time","employee","action"]];
+    for (const e of evs){
+      const d = new Date(e.timeISO);
+      rows.push([k, d.toLocaleTimeString(), e.name, e.action]);
+    }
+    const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g,'""')}"`).join(",")).join("\n");
+    downloadCSV(csv, `timeclock_${k}.csv`);
+    log("OK: CSV EXPORTED.");
+  });
+
+  resetDayBtn.addEventListener("click", () => {
+    const k = todayKey();
+    if (!state.events[k] || state.events[k].length === 0){
+      return log("INFO: NOTHING TO RESET FOR TODAY.");
+    }
+    if (!confirm("Reset all events for today?")){
+      return;
+    }
+    state.events[k] = [];
+    saveState();
+    log("OK: TODAY RESET.");
+    render();
+  });
+
+  clearAllBtn.addEventListener("click", () => {
+    if (!confirm("Clear ALL data (employees and events)?")){
+      return;
+    }
+    state.employees = [];
+    state.events = {};
+    saveState();
+    log("OK: ALL DATA CLEARED.");
+    render();
+  });
+
+  // Renderers
+  function render(){
+    renderStatus();
+    renderEvents();
+  }
+
+  function renderStatus(){
+    const tbody = statusTableBody;
+    tbody.innerHTML = "";
+    for (const emp of state.employees){
+      const tr = document.createElement("tr");
+      const status = isClockedIn(emp.name) ? "IN" : "OUT";
+      const last = lastActionTime(emp.name);
+      const hours = hoursTodayFor(emp.name);
+      tr.innerHTML = `
+        <td>${emp.name}</td>
+        <td>${status}</td>
+        <td>${last ? fmtTime(last) : "-"}</td>
+        <td>${hours.toFixed(2)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+    if (state.employees.length === 0){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="4" class="muted">No employees yet. Add some in Admin.</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function renderEvents(){
+    const tbody = eventsTableBody;
+    tbody.innerHTML = "";
+    const evs = getTodayEvents().slice().reverse(); // latest first
+    for (const e of evs){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${fmtTime(e.timeISO)}</td>
+        <td>${e.name}</td>
+        <td>${e.action}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+    if (evs.length === 0){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="3" class="muted">No events today.</td>`;
+      tbody.appendChild(tr);
+    }
+  }
+
+  // Helpers
+  function log(msg, isError=false){
+    const prefix = isError ? "!" : ">";
+    const cls = isError ? "error" : "";
+    const line = `${prefix} ${msg}`;
+    const div = document.createElement("div");
+    div.textContent = line;
+    if (cls) div.classList.add(cls);
+    logArea.prepend(div);
+  }
+
+  function downloadCSV(csvText, filename){
+    const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 0);
+  }
+
+  // Keyboard niceties
+  empPin.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") clockBtn.click();
+  });
+  newPin.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addEmpBtn.click();
+  });
+
+})();
+</script>
+</body>
+</html>
